@@ -976,6 +976,8 @@ export async function startServer(options: { listen?: boolean } = {}) {
 
   app.use((req, res, next) => {
     if (req.method === "OPTIONS") return next();
+    // Google Apps Script webhook is a server-to-server call — no browser Origin header.
+    if (req.path === "/api/google-form/webhook") return next();
     if (["POST", "PUT", "PATCH", "DELETE"].includes((req.method || "GET").toUpperCase())) {
       return requireSameOriginForMutations(req, res, next);
     }
