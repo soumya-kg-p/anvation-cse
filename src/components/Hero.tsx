@@ -18,6 +18,7 @@ interface HeroProps {
 
 export const Hero: React.FC<HeroProps> = ({ liveStats }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   // Live CMS State
   const [cms, setCms] = useState({
@@ -77,9 +78,9 @@ export const Hero: React.FC<HeroProps> = ({ liveStats }) => {
     updateCountdown();
     const timer = setInterval(updateCountdown, 1000);
 
-    // Canvas Particle Overlay with Cyber Palette
+    // Skip canvas on iOS — causes performance issues
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || isIOS) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -160,19 +161,19 @@ export const Hero: React.FC<HeroProps> = ({ liveStats }) => {
     <section className="relative min-h-screen flex flex-col justify-between items-center overflow-hidden pt-4 pb-10 px-3 sm:px-6 lg:px-8 bg-transparent">
       {/* Background Campus Image Layer with Holographic Blending */}
       <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20 scale-105 filter contrast-125 saturate-150 pointer-events-none mix-blend-screen"
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20 scale-105 filter contrast-125 saturate-150 pointer-events-none"
         style={{ backgroundImage: `url(${campusBgImage})` }}
       />
 
-      {/* Cyber Matrix Luminous Center Aura — rich multi-hue plasma */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[620px] bg-gradient-to-r from-cyan-400/25 via-sky-500/15 to-fuchsia-500/25 rounded-full blur-[170px] pointer-events-none animate-pulse-glow" />
-      <div className="absolute top-1/3 right-5 w-[480px] h-[480px] bg-gradient-to-br from-emerald-400/20 via-teal-500/10 to-sky-400/15 rounded-full blur-[150px] pointer-events-none animate-aurora-1" />
-      <div className="absolute top-1/2 left-5 w-[480px] h-[480px] bg-gradient-to-bl from-fuchsia-500/20 via-purple-500/10 to-amber-400/15 rounded-full blur-[150px] pointer-events-none animate-aurora-2" />
-      {/* Ambient rotating glow beam */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[820px] h-[820px] bg-[conic-gradient(from_0deg,rgba(34,211,238,0),rgba(168,85,247,0.12),rgba(244,114,182,0),rgba(52,211,153,0.1),rgba(34,211,238,0))] rounded-full blur-[90px] pointer-events-none animate-spin-slow" />
+      {/* Cyber Matrix Luminous Center Aura */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-gradient-to-r from-cyan-400/20 via-sky-500/10 to-fuchsia-500/20 rounded-full blur-[80px] pointer-events-none hidden sm:block animate-pulse-glow" />
+      <div className="absolute top-1/3 right-5 w-[300px] h-[300px] bg-gradient-to-br from-emerald-400/15 via-teal-500/8 to-sky-400/10 rounded-full blur-[80px] pointer-events-none hidden sm:block animate-aurora-1" />
+      <div className="absolute top-1/2 left-5 w-[300px] h-[300px] bg-gradient-to-bl from-fuchsia-500/15 via-purple-500/8 to-amber-400/10 rounded-full blur-[80px] pointer-events-none hidden sm:block animate-aurora-2" />
+      {/* Ambient rotating glow beam — desktop only */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-[conic-gradient(from_0deg,rgba(34,211,238,0),rgba(168,85,247,0.10),rgba(244,114,182,0),rgba(52,211,153,0.08),rgba(34,211,238,0))] rounded-full blur-[60px] pointer-events-none hidden lg:block animate-spin-slow" />
 
-      {/* Interactive Particle Overlay */}
-      <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none z-0 opacity-80" />
+      {/* Interactive Particle Overlay — hidden on iOS */}
+      <canvas ref={canvasRef} className={`absolute inset-0 pointer-events-none z-0 opacity-80 ${isIOS ? 'hidden' : ''}`} />
 
       {/* Main Hero Grid Layout */}
       <div className="relative z-10 w-full max-w-7xl mx-auto space-y-4 sm:space-y-6 pt-2">

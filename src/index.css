@@ -4,6 +4,8 @@
   html {
     scroll-behavior: smooth;
     color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
@@ -12,6 +14,8 @@
     font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     overflow-x: hidden;
     letter-spacing: -0.01em;
+    /* Fix iOS Safari 100vh jumping address bar */
+    min-height: -webkit-fill-available;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -219,8 +223,8 @@
 /* Glassmorphism Refined Cards */
 .glass-cyber-card {
   background: rgba(5, 9, 22, 0.72);
-  backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border: 1px solid rgba(34, 211, 238, 0.2);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   transition: all 0.3s ease;
@@ -358,7 +362,38 @@ html[data-theme="light"] {
 .bg-app { background-color: var(--app-bg); }
 .text-app { color: var(--text-strong); }
 
-/* Smooth theme-switch transition (applied only during the swap). */
+/* iOS Safari: disable heavy animations to prevent crashes */
+@media (max-width: 768px) {
+  .animate-aurora-1,
+  .animate-aurora-2,
+  .animate-aurora-3,
+  .animate-aurora-4,
+  .animate-spin-slow,
+  .animate-spin-slower,
+  .animate-float-slow,
+  .animate-pulse-glow {
+    animation: none !important;
+  }
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* iOS safe area padding for notch/home indicator */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
 html.theme-switching,
 html.theme-switching *,
 html.theme-switching *::before,
