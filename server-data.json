@@ -65,6 +65,63 @@
       "approvalEmailStatus": "SENT",
       "approvalEmailSentAt": "2026-09-11T17:37:25.348Z",
       "updatedAt": "2026-09-11T17:48:45.981Z"
+    },
+    {
+      "id": "ANV26-AI-01",
+      "teamName": "Tech Titans",
+      "leaderEmail": "kgsoumya1605@gmail.com",
+      "preferredTrack": "AI/ML",
+      "members": [
+        {
+          "id": "p-ANV26-AI-01-1",
+          "fullName": "K G Soumya",
+          "college": "KSSEM",
+          "state": "Karnataka",
+          "email": "kgsoumya1605@gmail.com",
+          "phone": "09880127030",
+          "usn": "1KG23CS048",
+          "gender": "Female",
+          "role": "Leader",
+          "teamId": "ANV26-AI-01",
+          "accommodationRequired": false,
+          "checkedIn": false,
+          "foodCouponsClaimed": {
+            "lunch1": false,
+            "dinner1": false,
+            "midnightSnack": false,
+            "breakfast2": false,
+            "lunch2": false
+          }
+        },
+        {
+          "id": "p-ANV26-AI-01-2",
+          "fullName": "Priya Nair",
+          "college": "KSSEM",
+          "state": "Karnataka",
+          "email": "priya.sample@example.com",
+          "phone": "9000000002",
+          "usn": "58",
+          "gender": "Female",
+          "role": "Member",
+          "teamId": "ANV26-AI-01",
+          "accommodationRequired": false,
+          "checkedIn": false,
+          "foodCouponsClaimed": {
+            "lunch1": false,
+            "dinner1": false,
+            "midnightSnack": false,
+            "breakfast2": false,
+            "lunch2": false
+          }
+        }
+      ],
+      "status": "Registered",
+      "createdAt": "2026-09-18T11:16:26.086Z",
+      "projectSubmitted": false,
+      "paymentStatus": "Pending",
+      "approvalStatus": "PENDING",
+      "accessPassword": "pbkdf2_sha256$37f58de3c6f64b618109a364c71ebe7d$5f78eaeb81339048c9328acc493b92d61f0e71855dd5efa74af7ed4072485580",
+      "portalPasswordPlain": "ANV26-AI-001"
     }
   ],
   "adminUsers": [
@@ -78,7 +135,7 @@
       "status": "Active",
       "createdAt": "2026-08-01",
       "twoFactorEnabled": true,
-      "lastLogin": "2026-09-16T06:50:23.868Z"
+      "lastLogin": "2026-09-18T11:17:08.383Z"
     },
     {
       "id": "adm-2",
@@ -152,6 +209,16 @@
     }
   ],
   "auditLogs": [
+    {
+      "id": "log-1789730186086",
+      "timestamp": "2026-09-18T11:16:26.086Z",
+      "actorEmail": "superadmin@kssem.edu.in",
+      "actorRole": "SUPER_ADMIN",
+      "action": "manual_team_created",
+      "target": "ANV26-AI-01",
+      "reason": "Team \"Tech Titans\" created manually by admin with 2 member(s)",
+      "ipAddress": "127.0.0.1"
+    },
     {
       "id": "log-1789148245348",
       "timestamp": "2026-09-11T17:37:25.348Z",

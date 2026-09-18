@@ -11,6 +11,7 @@ import { ContactSection } from './components/ContactSection';
 import { RegistrationModal } from './components/RegistrationModal';
 import { RulebookModal } from './components/RulebookModal';
 import { AdminPortal } from './components/AdminPortal';
+import { ParticipantPortal } from './components/ParticipantPortal';
 import { CyberAtmosphereBackground } from './components/CyberAtmosphereBackground';
 import { COLLEGE_INFO, HACKATHON_SCHEDULE } from './data/mockData';
 import { PortalView } from './types';
@@ -256,6 +257,12 @@ export default function App() {
           ) : (
             <AdminPortal />
           )}
+        </div>
+      )}
+
+      {currentView === 'participant' && (
+        <div className="relative z-10">
+          <ParticipantPortal onOpenRulebook={() => setIsRulebookModalOpen(true)} />
         </div>
       )}
 

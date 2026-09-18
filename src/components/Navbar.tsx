@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import anvationNavbarLogo from '../assets/branding/anvation-navbar-logo.png';
 import { PortalView } from '../types';
 import { useTheme } from '../theme';
-import { Menu, X, Rocket, Home } from 'lucide-react';
+import { Menu, X, Rocket, Home, User } from 'lucide-react';
 
 interface NavbarProps {
   currentView: PortalView;
@@ -99,6 +99,18 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Right Action CTAs */}
         <div className="hidden md:flex items-center gap-3">
+          {/* Participant Portal CTA */}
+          <button
+            onClick={() => setCurrentView('participant')}
+            className="relative group overflow-hidden px-5 py-2.5 rounded-xl font-extrabold text-sm text-white bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 shadow-[0_0_20px_rgba(34,211,238,0.5)] hover:shadow-[0_0_30px_rgba(59,130,246,0.8)] transition-all transform hover:-translate-y-0.5 active:translate-y-0 border border-cyan-400/40"
+            id="nav-participant-portal-btn"
+          >
+            <span className="relative z-10 flex items-center gap-2 uppercase tracking-wide">
+              <User className="w-4 h-4" />
+              <span>Participant Portal</span>
+            </span>
+            <div className="absolute inset-0 bg-white/20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+          </button>
           {/* Primary Register CTA */}
           <button
             onClick={onOpenRegister}
@@ -160,6 +172,10 @@ export const Navbar: React.FC<NavbarProps> = ({
       {mobileMenuOpen && (
         <div className="md:hidden bg-[var(--surface-drawer)] border-b border-cyan-500/30 px-4 py-6 space-y-4 animate-fadeIn">
           <div className="flex flex-col gap-3 font-medium text-slate-200 pt-2">
+            <button onClick={() => setCurrentView('participant')} className="text-left py-2 flex items-center gap-2 hover:text-cyan-400">
+              <User className="w-4 h-4" />
+              Participant Portal
+            </button>
             <button onClick={scrollToTop} className="text-left py-2 flex items-center gap-2 hover:text-cyan-400">
               <Home className="w-4 h-4" />
               Home

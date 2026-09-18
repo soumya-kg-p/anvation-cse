@@ -13,7 +13,6 @@
     "test": "tsx --test tests/upiVerification.test.ts"
   },
   "dependencies": {
-    "pg": "^8.13.1",
     "@tailwindcss/vite": "^4.1.14",
     "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-react": "^5.0.4",
@@ -23,14 +22,17 @@
     "express-rate-limit": "^8.7.0",
     "lucide-react": "^0.546.0",
     "motion": "^13.0.0",
+    "multer": "^2.4.0",
     "nodemailer": "^9.1.1",
+    "pg": "^8.13.1",
     "qrcode": "^1.5.4",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "sharp": "^0.35.4",
     "tesseract.js": "^7.0.0",
     "three": "^0.185.1",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",

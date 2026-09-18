@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "node:crypto";
@@ -18,8 +18,11 @@ import { SEED_ANNOUNCEMENTS, SPONSORS } from "./src/data/mockData";
 import { Team, ProjectSubmission, JudgeScorecard, Announcement, SupportTicket, Participant, MilestoneReport, MentorBooking, WebsiteCMSConfig, AuditLog, AdminUser, AdminRole, RulebookVersion, EmailCampaign, RoomAllocation, JudgingRound, ScheduleItem, Checkpoint, Sponsor } from "./src/types";
 import { HACKATHON_TRACKS } from "./src/data/mockData";
 import { PAYMENT_UPI_ID, ocrContainsTransactionId } from "./src/utils/upiVerification";
+import { parseCsv, previewCsvFromData, validateCsvRow, HEADER_ALIASES } from "./src/utils/csvEngine";
+import { excelToCsvData } from "./src/utils/excelEngine";
 import { ensureProductionSchema, findProductionDuplicate, findProductionTeamBySubmissionId, loadProductionTeams, productionStoreEnabled, saveProductionTeam, updateProductionTeam, deleteProductionTeam } from "./src/server/productionStore";
 import { resolveAdminBootstrapPassword } from "./src/utils/adminAuth";
+import multer from "multer";
 
 const execFileAsync = promisify(execFile);
 
@@ -103,7 +106,7 @@ try {
     }
     console.log("[ENV] Loaded configuration from .env (SMTP ready if configured).");
   } else {
-    console.log("[ENV] No .env file found — SMTP email delivery will fall back to .eml generation.");
+    console.log("[ENV] No .env file found â€” SMTP email delivery will fall back to .eml generation.");
   }
 } catch (envErr: any) {
   console.warn("[ENV] Could not load .env file:", envErr && envErr.message ? envErr.message : envErr);
@@ -172,7 +175,7 @@ function serveStaticWithCache(app: any, distPath: string) {
       },
     })
   );
-  // SPA fallback — any non-API GET that isn't a file returns the app shell.
+  // SPA fallback â€” any non-API GET that isn't a file returns the app shell.
   app.get("*", (req: any, res: any) => {
     res.setHeader("Cache-Control", "no-store, must-revalidate");
     res.sendFile(path.join(distPath, "index.html"));
@@ -232,7 +235,7 @@ async function startupWorker() {
     next();
   });
 
-  // All API traffic → single authoritative process (global rate limits live
+  // All API traffic â†’ single authoritative process (global rate limits live
   // there so they are consistent across every worker).
   app.use("/api", proxyApiToAuthority);
 
@@ -252,7 +255,7 @@ async function startupWorker() {
 // Attempt to spawn `n` worker processes using the experimental node:cluster
 // API. The API surface differs between Node versions (`.fork` vs `.spawn`, and
 // `setupPrimary` may be required first), so we try what's available and return
-// false if nothing works — the caller then falls back to single-process mode.
+// false if nothing works â€” the caller then falls back to single-process mode.
 function tryClusterSpawn(cluster: any, n: number): boolean {
   const entrypointFile = (() => {
     try {
@@ -294,7 +297,7 @@ async function run() {
     }
   }
 
-  // A forked cluster worker → serve static + proxy to authority.
+  // A forked cluster worker â†’ serve static + proxy to authority.
   if (cluster && cluster.isPrimary === false) {
     await startupWorker();
     return;
@@ -320,7 +323,7 @@ async function run() {
     return;
   }
 
-  // Classic single process (default) — fully backward compatible.
+  // Classic single process (default) â€” fully backward compatible.
   await startServer();
 }
 
@@ -641,7 +644,7 @@ export async function startServer(options: { listen?: boolean } = {}) {
     next();
   }
 
-  // Global per-IP API throttle — a sane ceiling so a single visitor (or a
+  // Global per-IP API throttle â€” a sane ceiling so a single visitor (or a
   // scripted bot burst) can never pin all the CPU. Each limiter below is
   // created fresh once here using the live cmsConfig window.
   const globalLimiter = rateLimit({
@@ -684,6 +687,36 @@ export async function startServer(options: { listen?: boolean } = {}) {
   }
 
   // Monotonic sequence for collision-free team/member identity.
+// Domain-based Team ID prefixes
+  const DOMAIN_PREFIXES: Record<string, string> = {
+    'Artificial Intelligence & Machine Learning': 'AI',
+    'Cybersecurity & Privacy': 'CS',
+    'FinTech & Digital Finance': 'FT',
+    'Smart Cities & CivicTech': 'SC',
+    'Sustainability & ClimateTech': 'ST',
+    'General': 'GN'
+  };
+
+  // Per-domain team counters
+  let domainTeamCounters: Record<string, number> = {};
+
+  function getDomainPrefix(domain: string): string {
+    return DOMAIN_PREFIXES[domain] || 'GN';
+  }
+
+  function getNextDomainTeamNumber(domain: string): number {
+    const prefix = getDomainPrefix(domain);
+    const current = domainTeamCounters[prefix] || 0;
+    domainTeamCounters[prefix] = current + 1;
+    return domainTeamCounters[prefix];
+  }
+
+  function generateDomainTeamId(domain: string): string {
+    const prefix = getDomainPrefix(domain);
+    const num = getNextDomainTeamNumber(domain);
+    return `${prefix}-${String(num).padStart(3, '0')}`;
+  }
+
   // Derived from a counter (not teams.length) so IDs are unique even when
   // registrations run concurrently or teams are deleted — prevents duplicate
   // Team IDs that would crash downstream lookups and React key rendering.
@@ -692,21 +725,21 @@ export async function startServer(options: { listen?: boolean } = {}) {
   // ---- Google Form integration (onFormSubmit webhook) ----
   // Submissions landing through the site's public Google Form (Register Now button)
   // are relayed here by a Google Apps Script trigger, converted into Teams, and
-  // pushed into the same team store that feeds /api/teams — so they appear in the
+  // pushed into the same team store that feeds /api/teams â€” so they appear in the
   // admin portal's Participant Directory automatically. Guarded by a shared secret.
   const googleFormWebhookSecret = String(process.env.GOOGLE_FORM_WEBHOOK_SECRET || '').trim();
 
   let cmsConfig: WebsiteCMSConfig = {
     eventName: "ANVATION 2026",
-    eventSubName: "NATIONAL LEVEL 24-HOUR HACKATHON • EXPLORE, INNOVATE, TRANSFORM",
+    eventSubName: "NATIONAL LEVEL 24-HOUR HACKATHON â€¢ EXPLORE, INNOVATE, TRANSFORM",
     collegeName: "K. S. SCHOOL OF ENGINEERING AND MANAGEMENT",
     departmentName: "DEPARTMENT OF COMPUTER SCIENCE AND ENGINEERING",
-    eventDates: "OCTOBER 8–9, 2026",
+    eventDates: "OCTOBER 8â€“9, 2026",
     venueLocation: "KSSEM Campus, Kanakapura Road, Bengaluru",
-    totalPrizePool: "₹50,000",
-    firstPrize: "₹25,000",
-    secondPrize: "₹15,000",
-    thirdPrize: "₹10,000",
+    totalPrizePool: "â‚¹50,000",
+    firstPrize: "â‚¹25,000",
+    secondPrize: "â‚¹15,000",
+    thirdPrize: "â‚¹10,000",
     contactEmail: "anvation2026@kssem.edu.in",
     contactPhone: "+91 98450 12345 / +91 99001 88776",
     registrationOpen: true,
@@ -976,7 +1009,7 @@ export async function startServer(options: { listen?: boolean } = {}) {
 
   app.use((req, res, next) => {
     if (req.method === "OPTIONS") return next();
-    // Google Apps Script webhook is a server-to-server call — no browser Origin header.
+    // Google Apps Script webhook is a server-to-server call â€” no browser Origin header.
     if (req.path === "/api/google-form/webhook") return next();
     if (["POST", "PUT", "PATCH", "DELETE"].includes((req.method || "GET").toUpperCase())) {
       return requireSameOriginForMutations(req, res, next);
@@ -1368,7 +1401,7 @@ export async function startServer(options: { listen?: boolean } = {}) {
       role: m.role || "Member"
     }));
 
-    const subject = `🎉 Registration Confirmed: ANVATION 2026 [Team ID: ${team.id}]`;
+    const subject = `ðŸŽ‰ Registration Confirmed: ANVATION 2026 [Team ID: ${team.id}]`;
     const dates = "October 8 - October 9, 2026 (24-Hour Hackathon)";
     const venue = "K.S. School of Engineering and Management (KSSEM), Kanakapura Road, Bengaluru - 560109";
 
@@ -1415,7 +1448,7 @@ export async function startServer(options: { listen?: boolean } = {}) {
                 <p style="margin:4px 0 0;font-size:12px;color:#67e8f9;">NATIONAL LEVEL 24-HOUR HACKATHON</p>
               </div>
               <div style="padding:24px;">
-                <h2 style="color:#0f172a;margin-top:0;">Registration Confirmed ✓</h2>
+                <h2 style="color:#0f172a;margin-top:0;">Registration Confirmed âœ“</h2>
                 <p>Dear <strong>${p.name}</strong>,</p>
                 <p>Congratulations! Your team's registration for <strong>ANVATION 2026</strong> has been confirmed.</p>
                 <p><strong>Team ID:</strong> ${team.id}<br/><strong>Team Name:</strong> ${team.teamName}<br/><strong>Domain:</strong> ${team.domain || team.preferredTrack}${rawAccessPassword ? `<br/><strong>Password:</strong> ${rawAccessPassword}` : ''}<br/><strong>UTR:</strong> ${team.paymentUtr || 'SUBMITTED'}</p>
@@ -1491,9 +1524,9 @@ export async function startServer(options: { listen?: boolean } = {}) {
     const from = String(process.env.MAIL_FROM || process.env.SMTP_USER);
     const recipients = team.members.map((m) => m.email);
     const password = String(team.portalPasswordPlain || team.accessPassword || '');
-    const subject = `ANVATION 2026 Registration Approved — Team ${team.id}`;
-    const text = `Hello participants,\n\nYour team ${team.teamName} (${team.id}) has been approved by the admin.\n\nPayment of ₹${cmsConfig.registrationFee || 0} has been verified. Registration approved.\n\nPortal password: ${password}\n\nUse Team ID ${team.id} and this password to log in to the participant portal.\n\nTeam details:\n${team.members.map((m) => `${m.fullName} (${m.role})`).join(", ")}`;
-    const html = `<p>Hello participants,</p><p>Your team <b>${team.teamName}</b> (<b>${team.id}</b>) has been approved by the admin.</p><p><b>Payment of ₹${cmsConfig.registrationFee || 0} has been verified. Registration approved.</b></p><p><b>Portal password:</b> ${password}</p><p>Use Team ID <b>${team.id}</b> and this password to log in to the participant portal.</p><p>${team.members.map((m) => `${m.fullName} (${m.role})`).join(", ")}</p>`;
+    const subject = `ANVATION 2026 Registration Approved â€” Team ${team.id}`;
+    const text = `Hello participants,\n\nYour team ${team.teamName} (${team.id}) has been approved by the admin.\n\nPayment of â‚¹${cmsConfig.registrationFee || 0} has been verified. Registration approved.\n\nPortal password: ${password}\n\nUse Team ID ${team.id} and this password to log in to the participant portal.\n\nTeam details:\n${team.members.map((m) => `${m.fullName} (${m.role})`).join(", ")}`;
+    const html = `<p>Hello participants,</p><p>Your team <b>${team.teamName}</b> (<b>${team.id}</b>) has been approved by the admin.</p><p><b>Payment of â‚¹${cmsConfig.registrationFee || 0} has been verified. Registration approved.</b></p><p><b>Portal password:</b> ${password}</p><p>Use Team ID <b>${team.id}</b> and this password to log in to the participant portal.</p><p>${team.members.map((m) => `${m.fullName} (${m.role})`).join(", ")}</p>`;
     await transporter.verify();
     await Promise.all(recipients.map((recipient) => transporter.sendMail({ from, to: recipient, subject, text, html })));
   }
@@ -2124,7 +2157,7 @@ export async function startServer(options: { listen?: boolean } = {}) {
         if (submissionId && productionStoreEnabled) {
           const existingBySubmission = await findProductionTeamBySubmissionId(submissionId);
           if (existingBySubmission) {
-            return { status: 200, body: { success: true, duplicate: true, team: sanitizeTeamForClient(existingBySubmission), message: "Duplicate submission ID — already registered." } };
+            return { status: 200, body: { success: true, duplicate: true, team: sanitizeTeamForClient(existingBySubmission), message: "Duplicate submission ID â€” already registered." } };
           }
         }
 
@@ -2159,6 +2192,263 @@ export async function startServer(options: { listen?: boolean } = {}) {
   // Public-safe status used to confirm the webhook is configured (no sensitive data).
   app.get("/api/google-form/status", (req, res) => {
     res.json({ success: true, webhookConfigured: !!googleFormWebhookSecret });
+  });
+
+  // Admin Credential Re-delivery Endpoints
+
+  // ============================================================================
+  // CSV & Excel Import — bulk-import teams from registration files
+  // POST /api/import/preview (requireAdmin) — validate without importing
+  // POST /api/import (requireAdmin, multipart/form-data) — validate + import Excel
+  // POST /api/import/csv (requireAdmin) — validate + import CSV (JSON body)
+  // Preview body: { csvText: string } or { fileName: string } (not used, just for future)
+  // Import (Excel): multipart field "file" (accepts .xlsx, .xls)
+  // Import (CSV): JSON body { csvText: string }
+  // ============================================================================
+
+  // ——— Shared import logic from parsed data ———
+  async function processImportData(
+    headers: string[],
+    rows: string[][],
+    sourceLabel: string,
+    teamsData: Team[]
+  ): Promise<{ imported: number; skipped: number; errors: string[]; teamIds: string[] }> {
+    const headerIndexMap = new Map<string, number>();
+    headers.forEach((h, i) => headerIndexMap.set(h.toLowerCase().replace(/[^a-z0-9_]/g, '_'), i));
+
+    const col = (row: string[], name: string): string => {
+      const idx = headerIndexMap.get(name);
+      return idx !== undefined && row[idx] !== undefined ? row[idx].trim() : '';
+    };
+
+    const colOrDefault = (row: string[], name: string, def: string): string => {
+      const val = col(row, name);
+      return val || def;
+    };
+
+    const seenEmails = new Set<string>();
+    const seenUsns = new Set<string>();
+    const seenPhones = new Set<string>();
+
+    let imported = 0, skipped = 0;
+    const errors: string[] = [];
+    const teamIds: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowNum = i + 2;
+
+      const teamIdRaw = col(row, 'team_id') || col(row, 'team id') || col(row, 'teamid') || col(row, 'registration_id') || col(row, 'reg_id');
+      const teamName = col(row, 'team_name') || col(row, 'team name') || col(row, 'teamname') || col(row, 'name');
+      const domain = col(row, 'domain') || col(row, 'track') || col(row, 'preferred_track');
+      const paymentUtr = col(row, 'payment_utr') || col(row, 'utr') || col(row, 'transaction_id');
+      const paymentStatus = colOrDefault(row, 'payment_status', 'Pending');
+      const teamStatus = colOrDefault(row, 'team_status', 'Registered');
+      const createdAt = col(row, 'registration_timestamp') || col(row, 'created_at') || new Date().toISOString();
+
+      if (!teamIdRaw && !teamName) {
+        skipped++;
+        errors.push(`Row ${rowNum}: Missing team ID and team name — skipped`);
+        continue;
+      }
+
+      const normalizedTeamName = teamName.trim().toLowerCase().replace(/\s+/g, ' ');
+      const teamId = teamIdRaw || `${sourceLabel}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      if (teamsData.find((t) => t.id === teamId || t.teamName.toLowerCase() === normalizedTeamName)) {
+        skipped++;
+        errors.push(`Row ${rowNum}: Team "${teamName}" already exists — skipped`);
+        continue;
+      }
+
+      const memberRows: string[][] = [];
+      const leaderRows: string[][] = [];
+      for (let j = 0; j < rows.length; j++) {
+        if (j === i) continue;
+        const other = rows[j];
+        const otherTeamId = col(other, 'team_id') || col(other, 'team id') || col(other, 'teamid');
+        if (otherTeamId === teamIdRaw) {
+          const roleVal = (col(other, 'role') || col(other, 'designation') || 'member').toLowerCase();
+          if (roleVal === 'leader') {
+            leaderRows.push(other);
+          } else {
+            memberRows.push(other);
+          }
+        }
+      }
+
+      const mkParticipant = (r: string[], idx: number): Participant => {
+        const email = col(r, 'email');
+        const usn = col(r, 'usn');
+        const phone = col(r, 'phone');
+
+        if (email) {
+          const lower = email.toLowerCase();
+          if (seenEmails.has(lower)) {
+            errors.push(`Row ${rowNum}: Duplicate email "${email}" — participant ${idx}`);
+          } else {
+            seenEmails.add(lower);
+          }
+        }
+        if (usn) {
+          const upper = usn.toUpperCase();
+          if (seenUsns.has(upper)) {
+            errors.push(`Row ${rowNum}: Duplicate USN "${usn}" — participant ${idx}`);
+          } else {
+            seenUsns.add(upper);
+          }
+        }
+        if (phone) {
+          const clean = phone.replace(/[^0-9]/g, '');
+          if (clean) {
+            if (seenPhones.has(clean)) {
+              errors.push(`Row ${rowNum}: Duplicate phone "${phone}" — participant ${idx}`);
+            } else {
+              seenPhones.add(clean);
+            }
+          }
+        }
+
+        return {
+          id: `p-${sourceLabel}-${teamId}-${idx}`,
+          fullName: sanitizeInputString(col(r, 'participant_name') || col(r, 'name') || col(r, 'full_name')),
+          college: sanitizeInputString(col(r, 'college')),
+          state: sanitizeInputString(col(r, 'state')),
+          email: sanitizeInputString(email.toLowerCase()),
+          phone: sanitizeInputString(phone),
+          usn: sanitizeInputString(usn?.toUpperCase()),
+          gender: (col(r, 'gender') as any) || 'Other',
+          role: col(r, 'role') === 'Leader' ? 'Leader' : 'Member',
+          teamId,
+          accommodationRequired: col(r, 'accommodation_required') === 'true',
+          checkedIn: false,
+          foodCouponsClaimed: { lunch1: false, dinner1: false, midnightSnack: false, breakfast2: false, lunch2: false },
+        };
+      };
+
+      const members: Participant[] = [];
+      const leaderRow = leaderRows[0] || row;
+      members.push(mkParticipant(leaderRow, 1));
+      memberRows.forEach((mr, idx) => members.push(mkParticipant(mr, idx + 2)));
+
+      const rawPassword = col(row, 'portal_password') || col(row, 'access_password') || '';
+      const leaderEmail = col(leaderRow, 'email') || col(row, 'email');
+
+      const team: Team = {
+        id: teamId,
+        teamName: sanitizeInputString(teamName),
+        leaderEmail: sanitizeInputString(leaderEmail),
+        preferredTrack: sanitizeInputString(domain) || 'General',
+        members,
+        status: teamStatus as any,
+        createdAt,
+        projectSubmitted: false,
+        paymentUtr: paymentUtr || undefined,
+        paymentStatus: paymentStatus as any,
+        approvalStatus: 'PENDING',
+        ...(rawPassword ? { accessPassword: hashPassword(rawPassword), portalPasswordPlain: rawPassword } : {}),
+      };
+
+      teams.push(team);
+      markDirty();
+      rebuildUniquenessIndexes();
+
+      if (productionStoreEnabled) {
+        try { await saveProductionTeam(team); } catch (e: any) {
+          errors.push(`DB write failed for ${teamId}: ${e?.message}`);
+        }
+      }
+
+      teamIds.push(teamId);
+      imported++;
+    }
+
+    return { imported, skipped, errors, teamIds };
+  }
+
+  // ——— Preview from parsed data (reusable) ———
+  async function previewFromParsedData(headers: string[], rows: string[][], existingTeams: Array<{ id: string; teamName: string }>) {
+    return previewCsvFromData(headers, rows, existingTeams);
+  }
+
+  // ——— CSV PREVIEW ———
+  app.post("/api/import/preview", requireAdmin, async (req, res) => {
+    try {
+      const csvText = String(req.body?.csvText || '').trim();
+      if (!csvText) return res.status(400).json({ success: false, error: 'No CSV content provided.' });
+
+      const existingTeams = teams.map((t) => ({ id: t.id, teamName: t.teamName }));
+      const { headers, rows } = parseCsv(csvText);
+      const result = previewFromParsedData(headers, rows, existingTeams);
+      return res.json({ success: true, preview: result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Preview failed.' });
+    }
+  });
+
+  // ——— CSV IMPORT ———
+  app.post("/api/import/csv", requireAdmin, async (req, res) => {
+    try {
+      const csvText = String(req.body?.csvText || '').trim();
+      if (!csvText) return res.status(400).json({ success: false, error: 'No CSV content provided.' });
+
+      const { headers, rows } = parseCsv(csvText);
+      if (headers.length === 0) return res.status(400).json({ success: false, error: 'Could not parse CSV headers.' });
+
+      const result = processImportData(headers, rows, 'CSV', teams);
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Import failed.' });
+    }
+  });
+
+  // ——— EXCEL UPLOAD MIDDLEWARE ———
+  const excelUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const ext = path.extname(file.originalname || '').toLowerCase();
+      if (ext === '.xlsx' || ext === '.xls') {
+        cb(null, true);
+      } else {
+        cb(new Error('Only .xlsx and .xls files are accepted'));
+      }
+    },
+  });
+
+  // ——— EXCEL PREVIEW ———
+  app.post("/api/import/preview-excel", requireAdmin, excelUpload.single('file'), async (req, res) => {
+    try {
+      const uploadedFile = (req as any).file as { buffer: Buffer } | undefined;
+      if (!uploadedFile) return res.status(400).json({ success: false, error: 'No Excel file uploaded.' });
+
+      const buffer = uploadedFile.buffer;
+      const { headers, rows } = excelToCsvData(buffer);
+      if (headers.length === 0) return res.status(400).json({ success: false, error: 'Excel file has no data.' });
+
+      const existingTeams = teams.map((t) => ({ id: t.id, teamName: t.teamName }));
+      const result = previewFromParsedData(headers, rows, existingTeams);
+      return res.json({ success: true, preview: result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Excel preview failed.' });
+    }
+  });
+
+  // ——— EXCEL IMPORT ———
+  app.post("/api/import/excel", requireAdmin, excelUpload.single('file'), async (req, res) => {
+    try {
+      const uploadedFile = (req as any).file as { buffer: Buffer } | undefined;
+      if (!uploadedFile) return res.status(400).json({ success: false, error: 'No Excel file uploaded.' });
+
+      const buffer = uploadedFile.buffer;
+      const { headers, rows } = excelToCsvData(buffer);
+      if (headers.length === 0) return res.status(400).json({ success: false, error: 'Excel file has no data.' });
+
+      const result = processImportData(headers, rows, 'XLSX', teams);
+      return res.json({ success: true, ...result });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Excel import failed.' });
+    }
   });
 
   // Admin Credential Re-delivery Endpoints
@@ -2321,7 +2611,7 @@ export async function startServer(options: { listen?: boolean } = {}) {
   app.post("/api/send-registration-email", async (req, res) => {
     try {
       const { teamId, email, emails, teamName, domain, track, password, participants } = req.body;
-      // participants: [{ email, name, college, role }] — used so the confirmation
+      // participants: [{ email, name, college, role }] â€” used so the confirmation
       // mail always includes the College of every registered participant.
       const participantList: Array<{ email: string; name: string; college: string; role: string }> =
         Array.isArray(participants) && participants.length > 0
@@ -2369,7 +2659,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
       const qrImgForMail = gateQr ? `<img src="cid:gate-pass-qr" style="width:180px;height:180px;" />` : `<span>Show your Team ID at the gate scanner.</span>`;
       const htmlOpen = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;color:#0f172a;">
 <div style="background:#0b192c;color:#fff;padding:22px 26px;"><div style="font-size:22px;font-weight:800;letter-spacing:1px;">ANVATION 2026</div><div style="font-size:12px;color:#67e8f9;">NATIONAL LEVEL 24-HOUR HACKATHON</div></div>
-<div style="padding:24px 26px;line-height:1.6;"><h2 style="margin-top:0;">Registration Confirmed ✓</h2>
+<div style="padding:24px 26px;line-height:1.6;"><h2 style="margin-top:0;">Registration Confirmed âœ“</h2>
 <p>Congratulations! Your team's registration for <strong>ANVATION 2026</strong> has been confirmed.</p>
 <table style="width:100%;border-collapse:collapse;font-size:14px;">`;
       const htmlRows = `<tr><td style="padding:6px 0;color:#475569;">Team ID</td><td style="padding:6px 0;font-weight:bold;font-family:monospace;color:#0284c7;">${teamId}</td></tr>
@@ -2382,7 +2672,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
 <table style="width:100%;border-collapse:collapse;font-size:12px;"><tr><th style="padding:5px 8px;border:1px solid #e2e8f0;background:#f1f5f9;text-align:left;">Email</th><th style="padding:5px 8px;border:1px solid #e2e8f0;background:#f1f5f9;text-align:left;">College</th><th style="padding:5px 8px;border:1px solid #e2e8f0;background:#f1f5f9;text-align:left;">Role</th></tr>${membersRows}</table></div>
 <div style="margin-top:18px;padding:14px;border:1px dashed #0284c7;border-radius:10px;text-align:center;background:#f0f9ff;"><div style="font-weight:800;color:#0b7490;margin-bottom:8px;">GATE ENTRY PASS</div>${qrImgForEml}<div style="font-size:11px;color:#475569;margin-top:6px;">Present this QR and your college ID at the KSSEM Gate Check-in desk on ${dates}.</div></div>
 </div>
-<div style="background:#f1f5f9;padding:14px 26px;font-size:12px;color:#64748b;">For any help, write to anvation2026@kssem.edu.in · Generated ${new Date().toLocaleString()}</div>
+<div style="background:#f1f5f9;padding:14px 26px;font-size:12px;color:#64748b;">For any help, write to anvation2026@kssem.edu.in Â· Generated ${new Date().toLocaleString()}</div>
 </div>`;
       const htmlFull = htmlOpen + htmlRows;
       // Same body but with the QR referenced by its cid so it renders in Gmail.
@@ -2437,9 +2727,9 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
             console.error(`[EMAIL FAILED] To: ${recipient} | Team: ${teamId} | ${mailErr.message}`);
           }
         }
-        res.json({ success: delivered > 0, deliveredCount: delivered, failedCount: failed, recipients: recipientList, emailRecipients, transport: "SMTP", gatewayMessage: delivered > 0 ? "Confirmation emails sent to all participants." : (failed === recipientList.length ? "SMTP is configured but delivery failed — double-check SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS." : "Some emails could not be delivered."), subject, eml, smtpConfigured });
+        res.json({ success: delivered > 0, deliveredCount: delivered, failedCount: failed, recipients: recipientList, emailRecipients, transport: "SMTP", gatewayMessage: delivered > 0 ? "Confirmation emails sent to all participants." : (failed === recipientList.length ? "SMTP is configured but delivery failed â€” double-check SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS." : "Some emails could not be delivered."), subject, eml, smtpConfigured });
       } else {
-        console.warn(`[EMAIL] SMTP incomplete (${smtp.missing.join(", ")}) — real mail was NOT delivered. Generated local .eml fallback for team ${teamId}.`);
+        console.warn(`[EMAIL] SMTP incomplete (${smtp.missing.join(", ")}) â€” real mail was NOT delivered. Generated local .eml fallback for team ${teamId}.`);
         res.json({ success: true, message: "SMTP is not fully configured, so real emails were not sent. A downloadable .eml was generated as a fallback.", recipients: recipientList, emailRecipients: recipientList.map(r => ({ recipient: r, status: "READY" })), deliveredCount: 0, failedCount: 0, subject, eml, smtpConfigured: false });
       }
     } catch (err: any) {
@@ -2572,6 +2862,141 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
       teams[index] = previousTeam;
       rebuildUniquenessIndexes();
       return res.status(500).json({ success: false, error: "Password reset failed." });
+    }
+  });
+
+  // Create Team Manually (Admin)
+  app.post("/api/admin/teams", requireAdmin, (req, res) => {
+    try {
+      const {
+        teamName,
+        teamId,
+        domain,
+        leaderEmail,
+        leaderName,
+        leaderCollege,
+        leaderState,
+        leaderPhone,
+        leaderUsn,
+        leaderGender,
+        portalPassword,
+        members = []
+      } = req.body;
+
+      if (!teamName || !leaderEmail || !leaderName) {
+        return res.status(400).json({ success: false, error: "Team name, leader email, and leader name are required" });
+      }
+
+      // Check if team ID already exists
+      const finalTeamId = teamId || `MAN-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+      if (teams.find(t => t.id === finalTeamId)) {
+        return res.status(400).json({ success: false, error: "Team ID already exists" });
+      }
+
+      // Check if leader email already exists
+      if (teams.some(t => t.leaderEmail.toLowerCase() === leaderEmail.toLowerCase())) {
+        return res.status(400).json({ success: false, error: "Leader email already registered" });
+      }
+
+      const rawPassword = portalPassword || generatePortalPassword();
+      const hashedPassword = hashPassword(rawPassword);
+
+      // Create leader participant
+      const leader: Participant = {
+        id: `p-${finalTeamId}-1`,
+        fullName: sanitizeInputString(leaderName),
+        college: sanitizeInputString(leaderCollege || ''),
+        state: sanitizeInputString(leaderState || ''),
+        email: sanitizeInputString(leaderEmail.toLowerCase()),
+        phone: sanitizeInputString(leaderPhone || ''),
+        usn: sanitizeInputString(leaderUsn?.toUpperCase() || ''),
+        gender: (leaderGender as any) || 'Other',
+        role: 'Leader',
+        teamId: finalTeamId,
+        accommodationRequired: false,
+        checkedIn: false,
+        foodCouponsClaimed: { lunch1: false, dinner1: false, midnightSnack: false, breakfast2: false, lunch2: false }
+      };
+
+      // Create member participants
+      const memberParticipants: Participant[] = members.map((m: any, idx: number) => ({
+        id: `p-${finalTeamId}-${idx + 2}`,
+        fullName: sanitizeInputString(m.fullName || ''),
+        college: sanitizeInputString(m.college || ''),
+        state: sanitizeInputString(m.state || ''),
+        email: sanitizeInputString((m.email || '').toLowerCase()),
+        phone: sanitizeInputString(m.phone || ''),
+        usn: sanitizeInputString((m.usn || '').toUpperCase()),
+        gender: (m.gender as any) || 'Other',
+        role: 'Member',
+        teamId: finalTeamId,
+        accommodationRequired: false,
+        checkedIn: false,
+        foodCouponsClaimed: { lunch1: false, dinner1: false, midnightSnack: false, breakfast2: false, lunch2: false }
+      }));
+
+      const allMembers = [leader, ...memberParticipants];
+
+      // Check for duplicate emails/USNs/phones within the team
+      const emails = new Set<string>();
+      const usns = new Set<string>();
+      const phones = new Set<string>();
+      for (const m of allMembers) {
+        if (m.email) {
+          const lower = m.email.toLowerCase();
+          if (emails.has(lower)) return res.status(400).json({ success: false, error: `Duplicate email: ${m.email}` });
+          emails.add(lower);
+        }
+        if (m.usn) {
+          const upper = m.usn.toUpperCase();
+          if (usns.has(upper)) return res.status(400).json({ success: false, error: `Duplicate USN: ${m.usn}` });
+          usns.add(upper);
+        }
+        if (m.phone) {
+          const clean = m.phone.replace(/[^0-9]/g, '');
+          if (clean && phones.has(clean)) return res.status(400).json({ success: false, error: `Duplicate phone: ${m.phone}` });
+          if (clean) phones.add(clean);
+        }
+      }
+
+      const newTeam: Team = {
+        id: finalTeamId,
+        teamName: sanitizeInputString(teamName),
+        leaderEmail: sanitizeInputString(leaderEmail),
+        preferredTrack: sanitizeInputString(domain || 'General'),
+        members: allMembers,
+        status: 'Registered',
+        createdAt: new Date().toISOString(),
+        projectSubmitted: false,
+        paymentUtr: undefined,
+        paymentStatus: 'Pending',
+        approvalStatus: 'PENDING',
+        accessPassword: hashedPassword,
+        portalPasswordPlain: rawPassword
+      };
+
+      teams.push(newTeam);
+      rebuildUniquenessIndexes();
+      markDirty();
+
+      auditLogs.unshift({
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actorEmail: req.session?.email || req.session?.username || "unknown-admin",
+        actorRole: (req.session?.role || "ADMIN") as AdminRole,
+        action: "manual_team_created",
+        target: finalTeamId,
+        reason: `Team "${teamName}" created manually by admin with ${allMembers.length} member(s)`,
+        ipAddress: getClientIp(req)
+      });
+
+      return res.json({
+        success: true,
+        team: sanitizeTeamForClient(newTeam),
+        portalPasswordPlain: rawPassword
+      });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message });
     }
   });
 
@@ -2895,7 +3320,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
       action: "CMS Config Update",
       target: "Website CMS Settings",
       beforeValue: "Registration Open = true",
-      afterValue: "Total Prize Pool = ₹2,00,000+",
+      afterValue: "Total Prize Pool = â‚¹2,00,000+",
       reason: "Super Admin updated prize pool details",
       ipAddress: "192.168.1.10"
     },
@@ -2922,14 +3347,14 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
     { id: "adm-5", email: "checkin1@kssem.edu.in", username: "checkin1", password: hashPassword(DEFAULT_ADMIN_PASSWORD), name: "Volunteer Gate Staff 1", role: "CHECKIN_STAFF", status: "Active", createdAt: "2026-08-05", twoFactorEnabled: false }
   ];
 
-  // Checkpoint (Milestone) definitions — admin can add / edit / delete these.
+  // Checkpoint (Milestone) definitions â€” admin can add / edit / delete these.
   let checkpoints: Checkpoint[] = [
     { id: "cp-1", number: 1, title: "Ideation & System Design", description: "Architecture, DB schema, UI wireframes, and API selection.", time: "02:00 PM (Day 1)", status: "Open" },
     { id: "cp-2", number: 2, title: "Core Prototype & API Integration", description: "Working code MVP, API endpoints, backend logic.", time: "10:00 PM (Day 1)", status: "Open" },
     { id: "cp-3", number: 3, title: "Final Pitch Deck & Live Demo", description: "Completed Github repo, video recording, and slides.", time: "07:00 AM (Day 2)", status: "Open" }
   ];
 
-  // File persistence — registration records & admin users survive server restarts.
+  // File persistence â€” registration records & admin users survive server restarts.
   const DATA_FILE = path.join(DATA_DIRECTORY, "server-data.json");
 
   let dirtyTimer: NodeJS.Timeout | null = null;
@@ -3121,7 +3546,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
     res.json({ success: true, users: adminUsers.map((user) => sanitizeAdminUser(user)) });
   });
 
-  // Admin Login — validates any provisioned admin user by username or email + password
+  // Admin Login â€” validates any provisioned admin user by username or email + password
   app.post("/api/admin-login", async (req, res) => {
     const { identifier, password } = req.body;
     const idn = (identifier || '').trim().toLowerCase();
@@ -3234,7 +3659,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
     res.json({ success: true, user: sanitizeAdminUser(usr) });
   });
 
-  // Update an admin user (name / username / password / assigned role) — full UPDATE (edit)
+  // Update an admin user (name / username / password / assigned role) â€” full UPDATE (edit)
   app.put("/api/admin-users/:id", requireSuperAdmin, (req, res) => {
     const { id } = req.params;
     const { name, email, username, password, role, twoFactorEnabled } = req.body;
@@ -3266,7 +3691,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
     res.json({ success: true, user: usr });
   });
 
-  // Delete an admin user — full DELETE (remove)
+  // Delete an admin user â€” full DELETE (remove)
   app.delete("/api/admin-users/:id", requireSuperAdmin, (req, res) => {
     const { id } = req.params;
     const idx = adminUsers.findIndex(u => u.id === id);
@@ -3430,7 +3855,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
     const htmlFull = `<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;color:#0f172a;">
 <div style="background:#0b192c;color:#fff;padding:22px 26px;"><div style="font-size:22px;font-weight:800;letter-spacing:1px;">ANVATION 2026</div><div style="font-size:12px;color:#67e8f9;">NATIONAL LEVEL 24-HOUR HACKATHON</div></div>
 <div style="padding:24px 26px;">${bodyHtml}</div>
-<div style="background:#f1f5f9;padding:14px 26px;font-size:12px;color:#64748b;">For any help, write to anvation2026@kssem.edu.in · Sent ${new Date().toLocaleString()}</div>
+<div style="background:#f1f5f9;padding:14px 26px;font-size:12px;color:#64748b;">For any help, write to anvation2026@kssem.edu.in Â· Sent ${new Date().toLocaleString()}</div>
 </div>`;
 
     const smtpHost = process.env.SMTP_HOST;
@@ -3477,7 +3902,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
         failed = recipientList.length;
       }
     } else if (!smtpHost) {
-      console.warn(`[EMAIL CAMPAIGN] SMTP NOT CONFIGURED (SMTP_HOST missing) — real mail NOT delivered. Campaign "${subjectSafe}" recorded only.`);
+      console.warn(`[EMAIL CAMPAIGN] SMTP NOT CONFIGURED (SMTP_HOST missing) â€” real mail NOT delivered. Campaign "${subjectSafe}" recorded only.`);
     }
 
     const targetLabel =
@@ -3520,7 +3945,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
         smtpConfigured: false,
         emailRecipients: recipientList.map((r) => ({ recipient: r, status: "READY" })),
         recipients: recipientList,
-        gatewayMessage: "SMTP is NOT configured (SMTP_HOST missing in .env) — the campaign was recorded but NO real emails were sent. Set SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS and restart the server to deliver mail."
+        gatewayMessage: "SMTP is NOT configured (SMTP_HOST missing in .env) â€” the campaign was recorded but NO real emails were sent. Set SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS and restart the server to deliver mail."
       });
     }
 
@@ -3685,7 +4110,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
       team.approvalTimestamp = new Date().toISOString();
       team.status = 'Confirmed' as any;
       team.paymentStatus = 'PAYMENT_APPROVED' as any;
-      team.paymentAmountDetail = `Payment of ₹${cmsConfig.registrationFee || 0} has been verified. Registration approved.`;
+      team.paymentAmountDetail = `Payment of â‚¹${cmsConfig.registrationFee || 0} has been verified. Registration approved.`;
       team.approvalEmailStatus = 'PENDING';
 
       if (productionStoreEnabled) {
@@ -3819,7 +4244,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
 
     if (paymentStatus === 'Verified') {
       team.paymentStatus = 'PAYMENT_APPROVED' as any;
-      team.paymentAmountDetail = `Payment of ₹${cmsConfig.registrationFee || 0} has been verified. Registration approved.`;
+      team.paymentAmountDetail = `Payment of â‚¹${cmsConfig.registrationFee || 0} has been verified. Registration approved.`;
       team.status = 'Confirmed' as any;
       team.approvalStatus = 'APPROVED';
       team.approvalTimestamp = new Date().toISOString();
@@ -3969,7 +4394,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
     res.json({ success: true, report });
   });
 
-  // Checkpoint (Milestone) CRUD — admin can list, add, edit, and delete checkpoints
+  // Checkpoint (Milestone) CRUD â€” admin can list, add, edit, and delete checkpoints
   app.get("/api/checkpoints", (req, res) => {
     res.json({ success: true, checkpoints });
   });
@@ -4165,7 +4590,7 @@ Use your Team ID and Password (or Leader email) to log into the Participant Port
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log("\nShutting down — flushing pending data to disk…");
+    console.log("\nShutting down â€” flushing pending data to diskâ€¦");
     try { persistNow(); } catch { /* best-effort */ }
     try { server.close(); } catch { /* best-effort */ }
     setTimeout(() => process.exit(0), 150);
